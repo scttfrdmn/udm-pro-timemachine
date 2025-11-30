@@ -537,3 +537,9 @@ This guide was created and tested with the following versions:
 **Last Updated**: November 29, 2025
 
 If you found this guide helpful, please share it with others who might benefit from using their UDM Pro as a Time Machine backup destination!
+
+## Support
+
+If you found this guide useful and would like to support my work, consider buying me a coffee!
+
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/scttfrdmn)
