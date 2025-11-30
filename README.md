@@ -489,10 +489,24 @@ Each Mac will create and maintain its own backup folder, and Time Machine handle
 
 ## Tested Configuration
 
-- **UDM Pro Firmware**: Various versions
+This guide was created and tested with the following versions:
+
+### UDM Pro Environment
+- **Firmware Version**: UDMPRO.al324.v4.4.6.44eadbd.251020.1723
+- **OS**: Debian GNU/Linux 11 (bullseye)
 - **Samba Version**: 4.13.13-Debian
-- **macOS Versions**: Compatible with macOS 10.15 (Catalina) and later
+- **Avahi Version**: 0.8
+- **Disk**: 16TB drive mounted at `/volume1` (RAID configuration via `/dev/md3`)
+
+### macOS Environment
+- **Tested macOS Version**: macOS 26.1 (Build 25B78)
+- **Compatibility**: Should work with macOS 10.15 (Catalina) and later
 - **Tested with**: Multiple MacBook Pros and MacBook Airs backing up simultaneously
+
+### Network Setup
+- **Protocol**: SMB (Samba)
+- **Discovery**: Avahi mDNS
+- **Authentication**: Samba user authentication (not guest access)
 
 ---
 
