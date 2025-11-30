@@ -38,29 +38,53 @@ This guide will help you configure your Ubiquiti Dream Machine Pro (UDM Pro) to 
 
 - Ubiquiti UDM Pro with installed hard drive
 - SSH access to your UDM Pro (root access)
-- Samba already installed on UDM Pro
-- Avahi daemon installed (for network discovery)
+- Internet connectivity on UDM Pro (to install packages via apt)
 - One or more Macs running macOS
+
+**Software that will be installed:**
+- Samba (SMB file sharing server)
+- Avahi daemon (for network discovery via mDNS)
 
 ### Disk Space
 
 In this example, we're using a 16TB disk mounted at `/volume1`. We allocate 15TB for Time Machine, leaving 1TB as buffer space.
 
-## Step 1: Verify Prerequisites
+## Step 1: Install and Verify Prerequisites
 
-First, SSH into your UDM Pro and verify Samba and Avahi are installed:
+First, SSH into your UDM Pro:
 
 ```bash
 ssh root@192.168.1.1
+```
 
-# Check for required services
+### Install Samba and Avahi
+
+If Samba and Avahi are not already installed, install them:
+
+```bash
+# Update package lists
+apt update
+
+# Install Samba and Avahi
+apt install -y samba avahi-daemon
+
+# Verify installation
 which smbd avahi-daemon
+```
 
-# Verify disk is mounted and has space
+You should see paths like `/usr/sbin/smbd` and `/usr/sbin/avahi-daemon`.
+
+### Verify Disk Space
+
+Check that your disk is mounted and has space:
+
+```bash
 df -h | grep volume1
 ```
 
 You should see your large disk mounted at `/volume1` with plenty of free space.
+
+**Note**: Some UDM Pro setups may already have Samba and Avahi installed. If the installation commands fail or indicate packages are already installed, that's fine - proceed to the next step.
 
 ## Step 2: Create Time Machine Directory
 
