@@ -139,7 +139,6 @@ cat >> /etc/samba/smb.conf << 'EOF'
    vfs objects = catia fruit streams_xattr
    fruit:aapl = yes
    fruit:time machine = yes
-   fruit:time machine max size = 15T
    fruit:model = MacSamba
    fruit:metadata = stream
    fruit:veto_appledouble = no
@@ -149,6 +148,8 @@ cat >> /etc/samba/smb.conf << 'EOF'
    fruit:delete_empty_adfiles = yes
 EOF
 ```
+
+**Important Note**: The `fruit:time machine max size` parameter is **NOT** included above because it's broken on ARM/aarch64 architecture (which most UDM Pros use). If you want to limit the backup size and your UDM Pro is x86_64, you can add it, but it's not recommended for ARM devices.
 
 ### Configuration Explanation
 
@@ -394,9 +395,9 @@ tmutil verifychecksums /Volumes/TimeMachine
    smartctl -a /dev/md3
    ```
 
-### Issue: Out of Space
+### Issue: Out of Space on UDM Pro
 
-Time Machine should respect the `fruit:time machine max size = 15T` setting, but you can manually check:
+Time Machine should respect the available space, but you can manually check:
 
 ```bash
 # Check space used
@@ -410,6 +411,132 @@ If you need more space, you can delete old backups from your Mac:
 - Open **System Settings > General > Time Machine**
 - Click the info icon next to your backup
 - Select old backups and delete them
+
+### Issue: Error Code 49 - "Could not create local snapshot"
+
+**This is the most common issue** - it means your **Mac's internal drive is too full**.
+
+Time Machine needs to create local APFS snapshots on your Mac before backing up. If your Mac doesn't have enough free space (typically needs at least 20-30GB free), you'll get error code 49.
+
+**Solution: Free up disk space on your Mac**
+
+1. **Check your Mac's available space**:
+   ```bash
+   df -h /
+   diskutil apfs list | grep -A 5 "Container"
+   ```
+
+2. **Identify what's using space**:
+   ```bash
+   # Check home directory usage
+   du -sh ~/* ~/.* 2>/dev/null | sort -hr | head -20
+
+   # Check Library (often the biggest culprit)
+   du -sh ~/Library/* 2>/dev/null | sort -hr | head -10
+   ```
+
+3. **Common space hogs and how to clean them**:
+
+   **Docker (often 30-50GB!)**
+   ```bash
+   docker system prune -a --volumes -f
+   ```
+
+   **Development Caches (10-20GB)**
+   ```bash
+   # Homebrew cache
+   rm -rf ~/Library/Caches/Homebrew/*
+   brew cleanup -s
+
+   # npm cache
+   npm cache clean --force
+   rm -rf ~/.npm
+
+   # Go cache
+   go clean -cache -modcache
+   rm -rf ~/Library/Caches/go-build/*
+
+   # Python cache
+   rm -rf ~/Library/Caches/com.apple.python/*
+
+   # Playwright browsers
+   rm -rf ~/Library/Caches/ms-playwright/*
+   ```
+
+   **General Caches**
+   ```bash
+   rm -rf ~/.cache/*
+   rm -rf ~/Library/Caches/Google/*
+   rm -rf ~/Library/Caches/com.spotify.client/*
+   ```
+
+   **Downloads folder**
+   ```bash
+   # Check what's in there first
+   ls -lhS ~/Downloads | head -20
+   # Then delete old files manually
+   ```
+
+4. **After freeing up space, retry the backup**:
+   ```bash
+   tmutil startbackup
+   ```
+
+**Expected result**: After freeing 20-30GB, Time Machine should successfully create snapshots and start backing up.
+
+### Issue: Error Code 50 - "The backup disk is not available"
+
+Error code 50 can indicate several issues:
+
+1. **ARM/aarch64 Architecture Bug**: If your UDM Pro uses ARM architecture (aarch64), the `fruit:time machine max size` parameter is broken and causes failures.
+
+   **Check your architecture**:
+   ```bash
+   ssh root@192.168.1.1 "uname -m"
+   ```
+
+   If it returns `aarch64`, **remove this line from your Samba config**:
+   ```bash
+   ssh root@192.168.1.1 "sed -i '/fruit:time machine max size/d' /etc/samba/smb.conf"
+   ssh root@192.168.1.1 "systemctl restart smbd nmbd"
+   ```
+
+2. **Permissions issues**: Verify the timemachine user can write to the directory
+3. **Network connectivity**: Check if the SMB share is accessible
+4. **Corrupted sparsebundle**: May need to start fresh (see below)
+
+### Issue: Backup Keeps Failing with Multiple Interrupted Attempts
+
+If you see many `.interrupted` or `.inprogress` backup folders, Time Machine is failing repeatedly.
+
+**Solution: Clean up and start fresh**
+
+1. **Check for interrupted backups**:
+   ```bash
+   # On your Mac (if mounted)
+   ls -la "/Volumes/Backups of <hostname>/" | grep interrupted
+
+   # Or on UDM Pro
+   ssh root@192.168.1.1 "ls -lah /volume1/timemachine/"
+   ```
+
+2. **Delete interrupted backups** (on UDM Pro):
+   ```bash
+   ssh root@192.168.1.1 "rm -rf /volume1/timemachine/*.interrupted"
+   ssh root@192.168.1.1 "rm -rf '/volume1/timemachine/*.inprogress'"
+   ```
+
+3. **If backups continue to fail, start with a fresh sparsebundle**:
+   ```bash
+   # Stop any running backup
+   tmutil stopbackup
+
+   # On UDM Pro, rename the old sparsebundle
+   ssh root@192.168.1.1 "mv /volume1/timemachine/<hostname>.sparsebundle /volume1/timemachine/<hostname>.sparsebundle.old"
+
+   # Start a new backup - Time Machine will create a fresh sparsebundle
+   tmutil startbackup
+   ```
 
 ## Security Considerations
 
