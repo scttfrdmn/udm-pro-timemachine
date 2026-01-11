@@ -1,6 +1,6 @@
-# Setting Up Time Machine on Ubiquiti UDM Pro
+# Setting Up Time Machine on Ubiquiti UDM Pro / USM Pro Max
 
-A complete guide to configuring your UDM Pro as a Time Machine backup destination for multiple Macs.
+A complete guide to configuring your UDM Pro or USM Pro Max as a Time Machine backup destination for multiple Macs.
 
 ## ⚠️ IMPORTANT DISCLAIMER
 
@@ -32,13 +32,13 @@ This guide involves using the Command Line Interface (CLI) to modify your UDM Pr
 
 ## Overview
 
-This guide will help you configure your Ubiquiti Dream Machine Pro (UDM Pro) to serve as a network Time Machine backup destination. The setup supports multiple Macs backing up simultaneously to the same share, with each Mac maintaining its own separate backup.
+This guide will help you configure your Ubiquiti Dream Machine Pro (UDM Pro) or Unifi Security Max Pro (USM Pro Max) to serve as a network Time Machine backup destination. The setup supports multiple Macs backing up simultaneously to the same share, with each Mac maintaining its own separate backup.
 
 ### What You'll Need
 
-- Ubiquiti UDM Pro with installed hard drive
-- SSH access to your UDM Pro (root access)
-- Internet connectivity on UDM Pro (to install packages via apt)
+- Ubiquiti UDM Pro with installed hard drive **OR** USM Pro Max with dual disk RAID-1 configuration
+- SSH access to your device (root access)
+- Internet connectivity on your device (to install packages via apt)
 - One or more Macs running macOS
 
 **Software that will be installed:**
@@ -47,11 +47,22 @@ This guide will help you configure your Ubiquiti Dream Machine Pro (UDM Pro) to 
 
 ### Disk Space
 
-In this example, we're using a 16TB disk mounted at `/volume1`. We allocate 15TB for Time Machine, leaving 1TB as buffer space.
+This guide supports two configurations:
+
+**UDM Pro**: Single 16TB disk mounted at `/volume1`
+**USM Pro Max**: Dual disk RAID-1 configuration (e.g., two 14.6TB disks = 14.5TB usable space after RAID-1 mirroring)
+
+The RAID-1 configuration on USM Pro Max provides redundancy - if one disk fails, your data remains safe on the other disk.
+
+**Note on RAID-1**: USM Pro Max typically comes with RAID-1 pre-configured via mdadm (usually `/dev/md3`). You can verify this with:
+```bash
+cat /proc/mdstat
+mdadm --detail /dev/md3
+```
 
 ## Step 1: Install and Verify Prerequisites
 
-First, SSH into your UDM Pro:
+First, SSH into your device (replace IP address with your device's IP):
 
 ```bash
 ssh root@192.168.1.1
@@ -149,22 +160,34 @@ cat >> /etc/samba/smb.conf << 'EOF'
 EOF
 ```
 
-**Important Note**: The `fruit:time machine max size` parameter is **NOT** included above because it's broken on ARM/aarch64 architecture (which most UDM Pros use). If you want to limit the backup size and your UDM Pro is x86_64, you can add it, but it's not recommended for ARM devices.
+**Important Note for Stability**: The `fruit:time machine max size` parameter is **intentionally NOT included** in this configuration because:
+
+1. **ARM Architecture Bug**: Both UDM Pro and USM Pro Max use ARM/aarch64 architecture, where this parameter is broken (Samba bug #13622)
+2. **Reliability**: Omitting this parameter prevents Error Code 50 and other backup failures
+3. **Space Management**: Time Machine will naturally use available space without needing explicit limits
+
+This configuration is specifically tailored for Time Machine stability and reliability. Do not add the `fruit:time machine max size` parameter unless you've verified your device uses x86_64 architecture (unlikely).
 
 ### Configuration Explanation
 
 - **path**: Directory where backups are stored
 - **valid users**: Only the timemachine user can access
 - **force user/group**: All files are owned by timemachine user
-- **create/directory mask**: Proper permissions for backup files
+- **create/directory mask**: Proper permissions for backup files (0600/0700 ensures security)
 - **vfs objects**: Essential VFS modules for macOS compatibility
   - `catia`: Filename character translation
-  - `fruit`: Apple-specific extensions
+  - `fruit`: Apple-specific extensions for Time Machine
   - `streams_xattr`: Extended attribute support
+- **fruit:aapl = yes**: Enables Apple extensions
 - **fruit:time machine = yes**: Advertises this as a Time Machine destination
-- **fruit:time machine max size**: Limits total backup size (15TB in this case)
+- **fruit:model = MacSamba**: Identifies as Mac-compatible device
 - **fruit:metadata = stream**: Stores metadata in streams for compatibility
 - **fruit:zero_file_id = yes**: Compatibility with various macOS versions
+- **fruit:posix_rename = yes**: Enables atomic renames for reliability
+- **fruit:wipe_intentionally_left_blank_rfork = yes**: Cleans up resource forks properly
+- **fruit:delete_empty_adfiles = yes**: Removes empty AppleDouble files
+
+All fruit parameters are specifically tuned for Time Machine reliability and performance.
 
 ## Step 5: Configure Avahi for Time Machine Discovery
 
@@ -270,8 +293,8 @@ sudo tmutil startbackup
 - Each Mac creates its own separate backup folder within `/volume1/timemachine/`
 - The folder is named after your Mac's hostname (e.g., "MacBook-Pro 2025-11-29-195534")
 - Time Machine uses locking mechanisms to prevent conflicts
-- The `fruit:time machine max size = 15T` setting is the total shared across all Macs
-- Each Mac maintains completely independent backups
+- All available disk space is shared across all Macs (Time Machine manages space automatically)
+- Each Mac maintains completely independent backups with separate sparsebundle files
 
 ### Adding Additional Macs
 
@@ -621,14 +644,16 @@ To remove the Time Machine configuration:
 
 ## Summary
 
-You now have a fully functional Time Machine backup server on your UDM Pro that:
+You now have a fully functional Time Machine backup server on your UDM Pro or USM Pro Max that:
 
 - ✅ Supports multiple Macs simultaneously
 - ✅ Uses authenticated access for security
 - ✅ Automatically appears in Time Machine preferences
-- ✅ Provides 15TB of backup space
+- ✅ Provides massive backup space (16TB on UDM Pro, 14.5TB on USM Pro Max with RAID-1)
 - ✅ Maintains separate backups for each Mac
 - ✅ Works with all modern macOS versions
+- ✅ ARM-optimized Samba configuration for maximum stability
+- ✅ (USM Pro Max) RAID-1 redundancy protects against disk failure
 
 Each Mac will create and maintain its own backup folder, and Time Machine handles all the complexity of keeping backups separate and preventing conflicts.
 
@@ -645,9 +670,19 @@ This guide was created and tested with the following versions:
 ### UDM Pro Environment
 - **Firmware Version**: UDMPRO.al324.v4.4.6.44eadbd.251020.1723
 - **OS**: Debian GNU/Linux 11 (bullseye)
+- **Architecture**: aarch64 (ARM64)
 - **Samba Version**: 4.13.13-Debian
 - **Avahi Version**: 0.8
 - **Disk**: 16TB drive mounted at `/volume1` (RAID configuration via `/dev/md3`)
+
+### USM Pro Max Environment
+- **OS**: Debian GNU/Linux 11 (bullseye)
+- **Architecture**: aarch64 (ARM64)
+- **Samba Version**: 4.13.13+dfsg-1~deb11u7
+- **Avahi Version**: 0.8-5+deb11u3
+- **Disk**: Dual 14.6TB disks in RAID-1 via mdadm (14.5TB usable)
+- **RAID Device**: `/dev/md3` (sdb5 + sdc5)
+- **RAID Status**: Both disks active [UU] for full redundancy
 
 ### macOS Environment
 - **Tested macOS Version**: macOS 26.1 (Build 25B78)
@@ -658,12 +693,13 @@ This guide was created and tested with the following versions:
 - **Protocol**: SMB (Samba)
 - **Discovery**: Avahi mDNS
 - **Authentication**: Samba user authentication (not guest access)
+- **Stability Features**: ARM-optimized configuration without problematic fruit:time machine max size parameter
 
 ---
 
-**Last Updated**: November 29, 2025
+**Last Updated**: January 10, 2026
 
-If you found this guide helpful, please share it with others who might benefit from using their UDM Pro as a Time Machine backup destination!
+If you found this guide helpful, please share it with others who might benefit from using their UDM Pro or USM Pro Max as a Time Machine backup destination!
 
 ## Support
 
