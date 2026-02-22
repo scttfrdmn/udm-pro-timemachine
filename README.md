@@ -380,13 +380,58 @@ grep timemachine-boot /var/log/syslog | tail -10
 
 ### How It Works
 
-- `bootup-bottom-invoke.service` is baked into the firmware squashfs and runs on every boot
-- It invokes all scripts in `/usr/lib/ubnt/hooks/system/bootup-bottom/` — this is Ubiquiti's native hook system
-- Our wrapper (`99-timemachine.sh`) in that directory calls the actual script at `/data/timemachine/99-timemachine.sh`
-- The actual script lives in `/data/timemachine/` (persistent storage, not wiped by firmware updates)
-- **Two layers of survival:** the hook wrapper is not dpkg-managed so it persists in the overlayfs; the actual script is in `/data/` which Ubiquiti explicitly preserves
-- **Self-healing:** the script checks if the hook wrapper exists on every run and recreates it if missing
-- The script is idempotent — if Samba and Avahi are already running correctly, it does nothing
+#### UDM Pro Filesystem Architecture
+
+The UDM Pro / USM Pro Max root filesystem is an **overlayfs** — a union of two layers:
+
+```
+/boot/firmware/rootfs  →  squashfs (read-only, replaced on firmware update)
+/mnt/.rwfs             →  ext4 (writable upper layer, changes go here)
+/                      →  overlayfs union of the two above
+```
+
+When you install a package or edit a file, the change is written to the writable upper layer at `/mnt/.rwfs/data/`. Reads see the union: upper layer takes precedence, squashfs fills in everything else.
+
+There are also two **completely separate partitions** that firmware updates never touch:
+
+| Path | Device | Contents |
+|------|--------|----------|
+| `/data/` | overlayfs upper layer (`/mnt/.rwfs/data/data/`) | User/app persistent data — Ubiquiti explicitly preserves this path |
+| `/persistent/` | separate ext4 partition (`/dev/disk/by-partlabel/persistent`) | Ubiquiti's internal dpkg rescue cache and system state |
+
+#### Why Firmware Updates Break Samba
+
+Firmware updates replace the squashfs (lower layer). Packages installed via `apt` (like Samba) live in the upper layer — but when the new squashfs boots, it carries a fresh dpkg database with no knowledge of those packages. The dpkg rescue process then purges unrecognized packages from the upper layer, removing the Samba binaries. Config files edited in `/etc/` get similarly cleaned up.
+
+The `/data/` path in the upper layer is **not** cleaned — Ubiquiti explicitly preserves it for user data. This is why your backup sparsebundles in `/volume1/timemachine/` survive (separate disk) and why scripts stored in `/data/timemachine/` survive.
+
+#### The Native Ubiquiti Hook System
+
+Rather than using a community workaround, this setup hooks into Ubiquiti's own boot infrastructure. Inspecting the squashfs directly revealed:
+
+```
+/lib/systemd/system/bootup-bottom-invoke.service  →  runs on every boot (in squashfs, permanent)
+    └── ExecStart: /usr/sbin/bootup-invoker bottom
+        └── calls: /usr/sbin/hook-invoker /usr/lib/ubnt/hooks/system/bootup-bottom/ '{}'
+            └── executes every script in that directory, sorted by filename
+```
+
+`bootup-bottom-invoke.service` is baked into the squashfs and will always be present regardless of firmware version. `hook-invoker` is a simple Python script that runs all executables in the given directory.
+
+The hook directory `/usr/lib/ubnt/hooks/system/bootup-bottom/` sits in the overlayfs upper layer. Unlike Samba, scripts dropped there manually are **not tracked by dpkg**, so the dpkg cleanup process after a firmware update leaves them alone. They persist.
+
+#### The Two-Layer Design
+
+```
+/usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh   ← tiny wrapper (overlayfs upper, not dpkg-managed)
+    └── exec /data/timemachine/99-timemachine.sh              ← actual script (/data/, explicitly preserved)
+```
+
+- **Layer 1 (hook wrapper):** not dpkg-managed, survives overlayfs cleanup
+- **Layer 2 (actual script):** in `/data/timemachine/`, which Ubiquiti explicitly preserves
+- **Self-healing:** the actual script checks on every run whether the hook wrapper exists and recreates it if not, so even if Layer 1 is somehow lost, one manual run restores it permanently
+
+The result: after any firmware update, on the first reboot, the hook runs, detects missing packages, reinstalls Samba and Avahi via `apt`, restores configs from `/data/timemachine/`, and starts the services — automatically, with no user intervention.
 
 ### Keeping the Backup Current
 
