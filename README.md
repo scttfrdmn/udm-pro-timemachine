@@ -284,6 +284,115 @@ sudo tmutil setdestination smb://timemachine@192.168.1.1/TimeMachine
 sudo tmutil startbackup
 ```
 
+## Step 8: Automate Recovery After Firmware Updates
+
+UDM Pro and USM Pro Max firmware updates wipe apt-installed packages and `/etc` configs. The `/data` directory is **persistent storage** that survives firmware updates — so we store config backups and a boot script there.
+
+This step sets up a boot script that runs on every startup and automatically reinstalls and reconfigures Samba and Avahi if they've been wiped.
+
+### 8a: Create Persistent Backup Directory
+
+```bash
+mkdir -p /data/timemachine
+```
+
+### 8b: Save Config Files to Persistent Storage
+
+Save the TimeMachine Samba share block:
+
+```bash
+cat >> /data/timemachine/smb-timemachine.conf << 'EOF'
+
+# Time Machine Share
+[TimeMachine]
+   comment = Time Machine Backup
+   path = /volume1/timemachine
+   browseable = yes
+   writable = yes
+   valid users = timemachine
+   force user = timemachine
+   force group = timemachine
+   create mask = 0600
+   directory mask = 0700
+   vfs objects = catia fruit streams_xattr
+   fruit:aapl = yes
+   fruit:time machine = yes
+   fruit:model = MacSamba
+   fruit:metadata = stream
+   fruit:veto_appledouble = no
+   fruit:posix_rename = yes
+   fruit:zero_file_id = yes
+   fruit:wipe_intentionally_left_blank_rfork = yes
+   fruit:delete_empty_adfiles = yes
+EOF
+```
+
+Save the Avahi service file:
+
+```bash
+cp /etc/avahi/services/smb.service /data/timemachine/avahi-smb.service
+```
+
+Back up the Samba password database:
+
+```bash
+cp /var/lib/samba/private/passdb.tdb /data/timemachine/passdb.tdb
+```
+
+### 8c: Install the Boot Script
+
+Download the script from this repository:
+
+```bash
+curl -o /data/on_boot.d/99-timemachine.sh \
+  https://raw.githubusercontent.com/scttfrdmn/udm-pro-timemachine/main/scripts/99-timemachine.sh
+chmod +x /data/on_boot.d/99-timemachine.sh
+```
+
+Or copy it manually — create `/data/on_boot.d/99-timemachine.sh` with the contents from [`scripts/99-timemachine.sh`](scripts/99-timemachine.sh) in this repository.
+
+### 8d: Verify the Boot Script
+
+Test it runs cleanly right now:
+
+```bash
+bash /data/on_boot.d/99-timemachine.sh
+```
+
+You should see output like:
+```
+[2026-01-10 12:00:00] Time Machine boot setup complete
+```
+
+And check the system log to confirm it's working:
+
+```bash
+grep timemachine-boot /var/log/syslog | tail -10
+```
+
+### How It Works
+
+- `/data/on_boot.d/` scripts run on every boot — including after firmware updates
+- `/data` is **not wiped** by firmware updates (unlike the root filesystem)
+- The script checks each component independently and only acts if something is missing
+- If Samba or Avahi are absent (post-firmware-update), it reinstalls them via `apt` and restores configs from `/data/timemachine/`
+- If everything is already running correctly, the script does nothing
+
+### Keeping the Backup Current
+
+If you ever change your Samba config or Samba password, update the backups:
+
+```bash
+# After changing smb.conf
+cp /etc/samba/smb.conf /data/timemachine/smb.conf.bak  # optional full backup
+# Manually update /data/timemachine/smb-timemachine.conf if the [TimeMachine] block changed
+
+# After changing the timemachine Samba password
+cp /var/lib/samba/private/passdb.tdb /data/timemachine/passdb.tdb
+```
+
+---
+
 ## Multiple Mac Support
 
 **Yes, this configuration fully supports multiple Macs backing up simultaneously!**
@@ -319,31 +428,13 @@ You'll see a directory for each Mac that has backed up to this share.
 
 ## After Firmware Updates
 
-**UDM Pro and USM Pro Max firmware updates wipe all apt-installed packages**, including Samba and Avahi. After any firmware update, Time Machine backups will stop working until you reinstall and reconfigure these services.
+**UDM Pro and USM Pro Max firmware updates wipe all apt-installed packages**, including Samba and Avahi. After any firmware update, Time Machine backups will stop working until the software is reinstalled.
 
 Your backup data on `/volume1/timemachine` is safe — only the software is removed, not the disk contents.
 
-To restore after a firmware update:
+**If you completed [Step 8](#step-8-automate-recovery-after-firmware-updates)**, the boot script handles this automatically on the next reboot — no manual intervention needed.
 
-```bash
-ssh root@192.168.1.1
-
-# Reinstall packages
-apt update && apt install -y samba avahi-daemon
-
-# Re-add TimeMachine share to smb.conf (see Step 4 above)
-# Re-add Samba user password
-printf 'timemachine\ntimemachine\n' | smbpasswd -a -s timemachine
-smbpasswd -e timemachine
-
-# Restore Avahi service file (see Step 5 above)
-
-# Start services
-systemctl restart smbd nmbd
-kill -HUP $(cat /var/run/avahi-daemon/pid)
-```
-
-See the [Troubleshooting](#issue-time-machine-stops-working-after-firmware-update) section for the full recovery procedure.
+**If you haven't set up the boot script**, see the [Troubleshooting](#issue-time-machine-stops-working-after-firmware-update) section for the manual recovery procedure, then consider going back and completing Step 8.
 
 ---
 
