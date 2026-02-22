@@ -286,9 +286,9 @@ sudo tmutil startbackup
 
 ## Step 8: Automate Recovery After Firmware Updates
 
-UDM Pro and USM Pro Max firmware updates wipe apt-installed packages and `/etc` configs. The `/data` directory is **persistent storage** that survives firmware updates — so we store config backups and a boot script there.
+UDM Pro and USM Pro Max firmware updates wipe apt-installed packages and `/etc` configs. The `/data` directory is **persistent storage** that survives firmware updates — so we store config backups and the boot script there.
 
-This step sets up a boot script that runs on every startup and automatically reinstalls and reconfigures Samba and Avahi if they've been wiped.
+This step installs a boot script into the **native Ubiquiti boot hook system** (`bootup-bottom-invoke.service`), which is baked into the firmware squashfs and runs on every boot. The hook directory at `/usr/lib/ubnt/hooks/system/bootup-bottom/` is not managed by any dpkg package, so custom scripts dropped there are preserved across firmware updates. The actual script lives in `/data/timemachine/` (persistent storage), so it has two layers of survival protection.
 
 ### 8a: Create Persistent Backup Directory
 
@@ -341,22 +341,30 @@ cp /var/lib/samba/private/passdb.tdb /data/timemachine/passdb.tdb
 
 ### 8c: Install the Boot Script
 
-Download the script from this repository:
+Download the script into persistent storage:
 
 ```bash
-curl -o /data/on_boot.d/99-timemachine.sh \
+curl -o /data/timemachine/99-timemachine.sh \
   https://raw.githubusercontent.com/scttfrdmn/udm-pro-timemachine/main/scripts/99-timemachine.sh
-chmod +x /data/on_boot.d/99-timemachine.sh
+chmod +x /data/timemachine/99-timemachine.sh
 ```
 
-Or copy it manually — create `/data/on_boot.d/99-timemachine.sh` with the contents from [`scripts/99-timemachine.sh`](scripts/99-timemachine.sh) in this repository.
+Install a small wrapper in the native Ubiquiti boot hook directory:
+
+```bash
+cat > /usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh << 'EOF'
+#!/bin/bash
+exec /data/timemachine/99-timemachine.sh "$@"
+EOF
+chmod +x /usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh
+```
 
 ### 8d: Verify the Boot Script
 
 Test it runs cleanly right now:
 
 ```bash
-bash /data/on_boot.d/99-timemachine.sh
+bash /usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh '{}'
 ```
 
 You should see output like:
@@ -364,7 +372,7 @@ You should see output like:
 [2026-01-10 12:00:00] Time Machine boot setup complete
 ```
 
-And check the system log to confirm it's working:
+And check the system log:
 
 ```bash
 grep timemachine-boot /var/log/syslog | tail -10
@@ -372,11 +380,13 @@ grep timemachine-boot /var/log/syslog | tail -10
 
 ### How It Works
 
-- `/data/on_boot.d/` scripts run on every boot — including after firmware updates
-- `/data` is **not wiped** by firmware updates (unlike the root filesystem)
-- The script checks each component independently and only acts if something is missing
-- If Samba or Avahi are absent (post-firmware-update), it reinstalls them via `apt` and restores configs from `/data/timemachine/`
-- If everything is already running correctly, the script does nothing
+- `bootup-bottom-invoke.service` is baked into the firmware squashfs and runs on every boot
+- It invokes all scripts in `/usr/lib/ubnt/hooks/system/bootup-bottom/` — this is Ubiquiti's native hook system
+- Our wrapper (`99-timemachine.sh`) in that directory calls the actual script at `/data/timemachine/99-timemachine.sh`
+- The actual script lives in `/data/timemachine/` (persistent storage, not wiped by firmware updates)
+- **Two layers of survival:** the hook wrapper is not dpkg-managed so it persists in the overlayfs; the actual script is in `/data/` which Ubiquiti explicitly preserves
+- **Self-healing:** the script checks if the hook wrapper exists on every run and recreates it if missing
+- The script is idempotent — if Samba and Avahi are already running correctly, it does nothing
 
 ### Keeping the Backup Current
 

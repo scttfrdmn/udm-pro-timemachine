@@ -1,16 +1,21 @@
 #!/bin/bash
-# /data/on_boot.d/99-timemachine.sh
+# /data/timemachine/99-timemachine.sh
 #
 # Restores Samba + Avahi Time Machine configuration after UDM Pro / USM Pro Max
 # firmware updates. Firmware updates wipe apt-installed packages and /etc configs,
 # but /data is persistent storage and survives updates.
 #
-# This script runs on every boot. It is idempotent — if everything is already
-# configured and running, it does nothing.
+# This script is called via a wrapper in the native Ubiquiti boot hook directory:
+#   /usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh
+# That hook directory is read by bootup-bottom-invoke.service on every boot.
+#
+# The script is self-healing: if the hook wrapper is ever removed, it recreates it.
 #
 # Setup: see https://github.com/scttfrdmn/udm-pro-timemachine (Step 8)
 
 BACKUP_DIR="/data/timemachine"
+HOOK_DIR="/usr/lib/ubnt/hooks/system/bootup-bottom"
+HOOK_WRAPPER="${HOOK_DIR}/99-timemachine.sh"
 LOG_TAG="timemachine-boot"
 
 log() { logger -t "$LOG_TAG" "$*"; echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
@@ -18,6 +23,19 @@ log() { logger -t "$LOG_TAG" "$*"; echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 if [ ! -d "$BACKUP_DIR" ]; then
     log "ERROR: $BACKUP_DIR not found — run Step 8 setup first (see README)"
     exit 1
+fi
+
+# --- Self-heal: recreate the boot hook wrapper if it was removed ---
+
+if [ ! -f "$HOOK_WRAPPER" ]; then
+    log "Boot hook wrapper missing — recreating at $HOOK_WRAPPER"
+    mkdir -p "$HOOK_DIR"
+    cat > "$HOOK_WRAPPER" << 'EOF'
+#!/bin/bash
+exec /data/timemachine/99-timemachine.sh "$@"
+EOF
+    chmod +x "$HOOK_WRAPPER"
+    log "Boot hook wrapper recreated"
 fi
 
 # --- Install packages if wiped by firmware update ---
