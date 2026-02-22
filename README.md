@@ -251,7 +251,7 @@ ps aux | grep avahi
 1. Open **System Settings** on your Mac
 2. Go to **General > Time Machine**
 3. Click **Select Disk** (or the **+** button)
-4. You should see **UDM-Pro** or **TimeMachine** in the list
+4. You should see **UDM-PRO-MAX** or **TimeMachine** in the list
 5. Select it
 6. When prompted for credentials:
    - Username: `timemachine`
@@ -544,7 +544,7 @@ tmutil verifychecksums /Volumes/TimeMachine
    systemctl restart smbd nmbd
    ```
 
-### Issue: "Time Machine couldn't back up to UDM-PRO.local"
+### Issue: "Time Machine couldn't back up to UDM-PRO-MAX.local"
 
 **Possible causes and solutions**:
 
