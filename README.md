@@ -378,6 +378,8 @@ And check the system log:
 grep timemachine-boot /var/log/syslog | tail -10
 ```
 
+> **Do not attempt to "simulate" a firmware update** by running `apt purge samba` or similar commands. This will immediately break your live system — it is not a simulation. The only real test of the recovery mechanism is an actual firmware update.
+
 ### How It Works
 
 #### UDM Pro Filesystem Architecture
