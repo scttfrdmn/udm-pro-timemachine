@@ -317,6 +317,36 @@ ls -lh /volume1/timemachine/
 
 You'll see a directory for each Mac that has backed up to this share.
 
+## After Firmware Updates
+
+**UDM Pro and USM Pro Max firmware updates wipe all apt-installed packages**, including Samba and Avahi. After any firmware update, Time Machine backups will stop working until you reinstall and reconfigure these services.
+
+Your backup data on `/volume1/timemachine` is safe — only the software is removed, not the disk contents.
+
+To restore after a firmware update:
+
+```bash
+ssh root@192.168.1.1
+
+# Reinstall packages
+apt update && apt install -y samba avahi-daemon
+
+# Re-add TimeMachine share to smb.conf (see Step 4 above)
+# Re-add Samba user password
+printf 'timemachine\ntimemachine\n' | smbpasswd -a -s timemachine
+smbpasswd -e timemachine
+
+# Restore Avahi service file (see Step 5 above)
+
+# Start services
+systemctl restart smbd nmbd
+kill -HUP $(cat /var/run/avahi-daemon/pid)
+```
+
+See the [Troubleshooting](#issue-time-machine-stops-working-after-firmware-update) section for the full recovery procedure.
+
+---
+
 ## Monitoring and Maintenance
 
 ### Check Backup Progress
@@ -560,6 +590,44 @@ If you see many `.interrupted` or `.inprogress` backup folders, Time Machine is 
    # Start a new backup - Time Machine will create a fresh sparsebundle
    tmutil startbackup
    ```
+
+### Issue: Time Machine Stops Working After Firmware Update
+
+**This is expected behavior.** UDM Pro and USM Pro Max firmware updates wipe all packages installed via `apt`, including Samba and Avahi. Your backup data on `/volume1/timemachine` is preserved — only the software needs to be reinstalled.
+
+**Full recovery procedure:**
+
+1. **Reinstall packages**:
+   ```bash
+   ssh root@192.168.1.1
+   apt update && apt install -y samba avahi-daemon
+   ```
+
+2. **Re-add the TimeMachine share to `/etc/samba/smb.conf`** (the `[TimeMachine]` section from Step 4 will be gone — re-run that step).
+
+3. **Re-add the Samba user password** (the OS user survives but the Samba password database is wiped):
+   ```bash
+   printf 'timemachine\ntimemachine\n' | smbpasswd -a -s timemachine
+   smbpasswd -e timemachine
+   ```
+
+4. **Restore the Avahi service file** (re-run Step 5).
+
+5. **Start services**:
+   ```bash
+   systemctl restart smbd nmbd
+   # Avahi may already be running — reload it instead of restarting
+   kill -HUP $(cat /var/run/avahi-daemon/pid)
+   ```
+
+6. **Start a backup from your Mac**:
+   ```bash
+   sudo tmutil startbackup
+   ```
+
+**Tip**: After each firmware update, check `systemctl status smbd` before assuming there's a more complex problem — a missing package is almost always the cause.
+
+---
 
 ## Security Considerations
 
