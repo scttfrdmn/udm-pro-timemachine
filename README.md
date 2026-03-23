@@ -420,20 +420,32 @@ Rather than using a community workaround, this setup hooks into Ubiquiti's own b
 
 `bootup-bottom-invoke.service` is baked into the squashfs and will always be present regardless of firmware version. `hook-invoker` is a simple Python script that runs all executables in the given directory.
 
-The hook directory `/usr/lib/ubnt/hooks/system/bootup-bottom/` sits in the overlayfs upper layer. Unlike Samba, scripts dropped there manually are **not tracked by dpkg**, so the dpkg cleanup process after a firmware update leaves them alone. They persist.
+The hook directory `/usr/lib/ubnt/hooks/system/bootup-bottom/` sits in the overlayfs upper layer.
 
-#### The Two-Layer Design
+#### What Firmware Updates Actually Reset (v5.x)
+
+Testing against v5.0.16 revealed that firmware updates on v5.x reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped. Only `/data/` (and the separate `/persistent/` partition) are preserved.
+
+This means recovery after a firmware update requires **one manual SSH command** to bootstrap:
+
+```bash
+ssh root@<udm-ip> bash /data/timemachine/99-timemachine.sh
+```
+
+This is the only step needed. The script reinstalls Samba, restores all configs, restarts services, and recreates the hook wrapper — all automatically. Subsequent reboots are handled by the hook until the next firmware update.
+
+#### The Design
 
 ```
-/usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh   ← tiny wrapper (overlayfs upper, not dpkg-managed)
-    └── exec /data/timemachine/99-timemachine.sh              ← actual script (/data/, explicitly preserved)
+/usr/lib/ubnt/hooks/system/bootup-bottom/99-timemachine.sh   ← hook wrapper (wiped on firmware update)
+    └── exec /data/timemachine/99-timemachine.sh              ← actual script (/data/, always preserved)
 ```
 
-- **Layer 1 (hook wrapper):** not dpkg-managed, survives overlayfs cleanup
-- **Layer 2 (actual script):** in `/data/timemachine/`, which Ubiquiti explicitly preserves
-- **Self-healing:** the actual script checks on every run whether the hook wrapper exists and recreates it if not, so even if Layer 1 is somehow lost, one manual run restores it permanently
+- **Hook wrapper:** handles recovery on every normal reboot; wiped by firmware updates
+- **Actual script:** lives in `/data/timemachine/`, which survives firmware updates unconditionally
+- **Self-healing:** the script recreates the hook wrapper if missing, so one manual run after a firmware update restores full automatic operation
 
-The result: after any firmware update, on the first reboot, the hook runs, detects missing packages, reinstalls Samba and Avahi via `apt`, restores configs from `/data/timemachine/`, and starts the services — automatically, with no user intervention.
+The result: after a firmware update, one SSH command does a full recovery in ~60 seconds. After that, the hook handles all future reboots automatically until the next firmware update.
 
 ### Keeping the Backup Current
 
@@ -489,9 +501,15 @@ You'll see a directory for each Mac that has backed up to this share.
 
 Your backup data on `/volume1/timemachine` is safe — only the software is removed, not the disk contents.
 
-**If you completed [Step 8](#step-8-automate-recovery-after-firmware-updates)**, the boot script handles this automatically on the next reboot — no manual intervention needed.
+**If you completed [Step 8](#step-8-automate-recovery-after-firmware-updates)**, recovery is one command:
 
-**If you haven't set up the boot script**, see the [Troubleshooting](#issue-time-machine-stops-working-after-firmware-update) section for the manual recovery procedure, then consider going back and completing Step 8.
+```bash
+ssh root@<udm-ip> bash /data/timemachine/99-timemachine.sh
+```
+
+This reinstalls Samba, restores all configs, restarts services, and reinstalls the boot hook — all automatically, in ~60 seconds. Note: the hook wrapper in the Ubiquiti boot directory is wiped by firmware updates (v5.x confirmed), so this one manual trigger is required after each update.
+
+**If you haven't set up the boot script**, see the [Troubleshooting](#issue-time-machine-stops-working-after-firmware-update) section for the full manual recovery procedure, then consider going back and completing Step 8.
 
 ---
 
