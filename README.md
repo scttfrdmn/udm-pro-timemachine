@@ -449,9 +449,20 @@ The hook directory `/usr/lib/ubnt/hooks/system/bootup-bottom/` sits in the overl
 
 #### What Firmware Updates Actually Reset (v5.x)
 
-Testing against v5.0.16 revealed that firmware updates on v5.x reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped. Only `/data/` (and the separate `/persistent/` partition) are preserved.
+Testing against v5.0.16 and v5.1.26 revealed that firmware updates on v5.x reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped both times. Only `/data/` (and the separate `/persistent/` partition) are preserved.
 
-A **factory reset** goes further: it also drops the `/volume1` mount and (on UniFi OS v9+) remounts the data RAID array under a UUID path such as `/volume/<uuid>` instead of `/volume1`. The recovery script handles this too — it locates the `/dev/md3` mount and re-links `/volume1` to it before restoring the share (see [The data disk mount path changed](#disk-space)).
+What each event actually affects:
+
+| | Firmware update | Factory reset |
+|---|---|---|
+| Samba/Avahi packages | wiped | wiped |
+| `/etc/samba/smb.conf`, Samba passdb | wiped | wiped |
+| Hook wrapper in `/usr/lib/ubnt/hooks/...` | wiped | wiped |
+| `/data/timemachine/` recovery kit | **preserved** | **preserved** |
+| `/volume1` symlink to the data disk | **preserved** (confirmed on v5.1.26) | wiped |
+| Backup data (sparsebundles on the RAID array) | **preserved** | **preserved** |
+
+So a routine firmware update needs the packages and configs restored, while a **factory reset** additionally drops the `/volume1` path — and on UniFi OS v9+ the data RAID array comes back mounted under a UUID path such as `/volume/<uuid>` instead of `/volume1`. The recovery script handles both cases: it locates the `/dev/md3` mount and re-links `/volume1` to it if needed, then restores the share (see [the mount path note](#disk-space)).
 
 This means recovery after a firmware update requires **one manual SSH command** to bootstrap:
 
@@ -938,6 +949,7 @@ This guide was created and tested with the following versions:
 
 ### USM Pro Max Environment
 - **OS**: Debian GNU/Linux 11 (bullseye)
+- **UniFi OS Versions Tested**: v5.0.16, v5.1.26 (recovery verified across both updates)
 - **Architecture**: aarch64 (ARM64)
 - **Samba Version**: 4.13.13+dfsg-1~deb11u7
 - **Avahi Version**: 0.8-5+deb11u3
@@ -959,7 +971,7 @@ This guide was created and tested with the following versions:
 
 ---
 
-**Last Updated**: July 17, 2026
+**Last Updated**: August 2, 2026
 
 If you found this guide helpful, please share it with others who might benefit from using their UDM Pro or USM Pro Max as a Time Machine backup destination!
 
