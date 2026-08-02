@@ -1,6 +1,6 @@
-# Setting Up Time Machine on Ubiquiti UDM Pro / USM Pro Max
+# Setting Up Time Machine on Ubiquiti UDM Pro / UDM Pro Max
 
-A complete guide to configuring your UDM Pro or USM Pro Max as a Time Machine backup destination for multiple Macs.
+A complete guide to configuring your UDM Pro or UDM Pro Max as a Time Machine backup destination for multiple Macs.
 
 ## ⚠️ IMPORTANT DISCLAIMER
 
@@ -32,11 +32,11 @@ This guide involves using the Command Line Interface (CLI) to modify your UDM Pr
 
 ## Overview
 
-This guide will help you configure your Ubiquiti Dream Machine Pro (UDM Pro) or Unifi Security Max Pro (USM Pro Max) to serve as a network Time Machine backup destination. The setup supports multiple Macs backing up simultaneously to the same share, with each Mac maintaining its own separate backup.
+This guide will help you configure your Ubiquiti UniFi Dream Machine Pro (UDM Pro) or UniFi Dream Machine Pro Max (UDM-Pro-Max) to serve as a network Time Machine backup destination. The setup supports multiple Macs backing up simultaneously to the same share, with each Mac maintaining its own separate backup.
 
 ### What You'll Need
 
-- Ubiquiti UDM Pro with installed hard drive **OR** USM Pro Max with dual disk RAID-1 configuration
+- Ubiquiti UDM Pro with installed hard drive **OR** UDM Pro Max with dual disk RAID-1 configuration
 - SSH access to your device (root access)
 - Internet connectivity on your device (to install packages via apt)
 - One or more Macs running macOS
@@ -50,11 +50,11 @@ This guide will help you configure your Ubiquiti Dream Machine Pro (UDM Pro) or 
 This guide supports two configurations:
 
 **UDM Pro**: Single 16TB disk mounted at `/volume1`
-**USM Pro Max**: Dual disk RAID-1 configuration (e.g., two 14.6TB disks = 14.5TB usable space after RAID-1 mirroring)
+**UDM Pro Max**: Dual disk RAID-1 configuration (e.g., two 14.6TB disks = 14.5TB usable space after RAID-1 mirroring)
 
-The RAID-1 configuration on USM Pro Max provides redundancy - if one disk fails, your data remains safe on the other disk.
+The RAID-1 configuration on UDM Pro Max provides redundancy - if one disk fails, your data remains safe on the other disk.
 
-**Note on RAID-1**: USM Pro Max typically comes with RAID-1 pre-configured via mdadm (usually `/dev/md3`). You can verify this with:
+**Note on RAID-1**: UDM Pro Max typically comes with RAID-1 pre-configured via mdadm (usually `/dev/md3`). You can verify this with:
 ```bash
 cat /proc/mdstat
 mdadm --detail /dev/md3
@@ -187,7 +187,7 @@ EOF
 
 **Important Note for Stability**: The `fruit:time machine max size` parameter is **intentionally NOT included** in this configuration because:
 
-1. **ARM Architecture Bug**: Both UDM Pro and USM Pro Max use ARM/aarch64 architecture, where this parameter is broken (Samba bug #13622)
+1. **ARM Architecture Bug**: Both UDM Pro and UDM Pro Max use ARM/aarch64 architecture, where this parameter is broken (Samba bug #13622)
 2. **Reliability**: Omitting this parameter prevents Error Code 50 and other backup failures
 3. **Space Management**: Time Machine will naturally use available space without needing explicit limits
 
@@ -311,7 +311,7 @@ sudo tmutil startbackup
 
 ## Step 8: Automate Recovery After Firmware Updates
 
-UDM Pro and USM Pro Max firmware updates wipe apt-installed packages and `/etc` configs. The `/data` directory is **persistent storage** that survives firmware updates — so we store config backups and the boot script there.
+UDM Pro and UDM Pro Max firmware updates wipe apt-installed packages and `/etc` configs. The `/data` directory is **persistent storage** that survives firmware updates — so we store config backups and the boot script there.
 
 This step installs a boot script into the **native Ubiquiti boot hook system** (`bootup-bottom-invoke.service`), which is baked into the firmware squashfs and runs on every boot. The hook directory at `/usr/lib/ubnt/hooks/system/bootup-bottom/` is not managed by any dpkg package, so custom scripts dropped there are preserved across firmware updates. The actual script lives in `/data/timemachine/` (persistent storage), so it has two layers of survival protection.
 
@@ -409,7 +409,7 @@ grep timemachine-boot /var/log/syslog | tail -10
 
 #### UDM Pro Filesystem Architecture
 
-The UDM Pro / USM Pro Max root filesystem is an **overlayfs** — a union of two layers:
+The UDM Pro / UDM Pro Max root filesystem is an **overlayfs** — a union of two layers:
 
 ```
 /boot/firmware/rootfs  →  squashfs (read-only, replaced on firmware update)
@@ -535,7 +535,7 @@ You'll see a directory for each Mac that has backed up to this share.
 
 ## After Firmware Updates
 
-**UDM Pro and USM Pro Max firmware updates wipe all apt-installed packages**, including Samba and Avahi. After any firmware update, Time Machine backups will stop working until the software is reinstalled.
+**UDM Pro and UDM Pro Max firmware updates wipe all apt-installed packages**, including Samba and Avahi. After any firmware update, Time Machine backups will stop working until the software is reinstalled.
 
 Your backup data on `/volume1/timemachine` is safe — only the software is removed, not the disk contents.
 
@@ -797,7 +797,7 @@ If you see many `.interrupted` or `.inprogress` backup folders, Time Machine is 
 
 ### Issue: Time Machine Stops Working After Firmware Update
 
-**This is expected behavior.** UDM Pro and USM Pro Max firmware updates wipe all packages installed via `apt`, including Samba and Avahi. Your backup data on `/volume1/timemachine` is preserved — only the software needs to be reinstalled.
+**This is expected behavior.** UDM Pro and UDM Pro Max firmware updates wipe all packages installed via `apt`, including Samba and Avahi. Your backup data on `/volume1/timemachine` is preserved — only the software needs to be reinstalled.
 
 **Full recovery procedure:**
 
@@ -916,16 +916,16 @@ To remove the Time Machine configuration:
 
 ## Summary
 
-You now have a fully functional Time Machine backup server on your UDM Pro or USM Pro Max that:
+You now have a fully functional Time Machine backup server on your UDM Pro or UDM Pro Max that:
 
 - ✅ Supports multiple Macs simultaneously
 - ✅ Uses authenticated access for security
 - ✅ Automatically appears in Time Machine preferences
-- ✅ Provides massive backup space (16TB on UDM Pro, 14.5TB on USM Pro Max with RAID-1)
+- ✅ Provides massive backup space (16TB on UDM Pro, 14.5TB on UDM Pro Max with RAID-1)
 - ✅ Maintains separate backups for each Mac
 - ✅ Works with all modern macOS versions
 - ✅ ARM-optimized Samba configuration for maximum stability
-- ✅ (USM Pro Max) RAID-1 redundancy protects against disk failure
+- ✅ (UDM Pro Max) RAID-1 redundancy protects against disk failure
 
 Each Mac will create and maintain its own backup folder, and Time Machine handles all the complexity of keeping backups separate and preventing conflicts.
 
@@ -947,7 +947,8 @@ This guide was created and tested with the following versions:
 - **Avahi Version**: 0.8
 - **Disk**: 16TB drive mounted at `/volume1` (RAID configuration via `/dev/md3`)
 
-### USM Pro Max Environment
+### UDM Pro Max Environment
+- **Model**: UniFi Dream Machine Pro Max (`UDM-Pro-Max`, systemid `ea32`)
 - **OS**: Debian GNU/Linux 11 (bullseye)
 - **UniFi OS Versions Tested**: v5.0.16, v5.1.26 (recovery verified across both updates)
 - **Architecture**: aarch64 (ARM64)
@@ -973,7 +974,7 @@ This guide was created and tested with the following versions:
 
 **Last Updated**: August 2, 2026
 
-If you found this guide helpful, please share it with others who might benefit from using their UDM Pro or USM Pro Max as a Time Machine backup destination!
+If you found this guide helpful, please share it with others who might benefit from using their UDM Pro or UDM Pro Max as a Time Machine backup destination!
 
 ## Support
 

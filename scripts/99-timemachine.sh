@@ -1,7 +1,7 @@
 #!/bin/bash
 # /data/timemachine/99-timemachine.sh
 #
-# Restores Samba + Avahi Time Machine configuration after UDM Pro / USM Pro Max
+# Restores Samba + Avahi Time Machine configuration after UDM Pro / UDM Pro Max
 # firmware updates. Firmware updates wipe apt-installed packages and /etc configs,
 # but /data is persistent storage and survives updates.
 #
@@ -27,7 +27,7 @@ if [ ! -d "$BACKUP_DIR" ]; then
 fi
 
 # --- Self-heal: ensure /volume1 points at the RAID data disk ---
-# UniFi OS v9+ (UDM/USM firmware v5.x) mounts the data RAID array under a
+# UniFi OS v9+ (UDM firmware v5.x) mounts the data RAID array under a
 # UUID path (/volume/<uuid>) instead of the historical /volume1. The share
 # config and backups all reference /volume1, so bridge it with a symlink.
 # mdadm assembles the array as /dev/md3; we find wherever the kernel mounted
