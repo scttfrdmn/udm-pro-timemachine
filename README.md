@@ -449,7 +449,7 @@ The hook directory `/usr/lib/ubnt/hooks/system/bootup-bottom/` sits in the overl
 
 #### What Firmware Updates Actually Reset (v5.x)
 
-Testing across v5.0.16 through v5.1.31 revealed that firmware updates on v5.x reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped every time. Only `/data/` (and the separate `/persistent/` partition) are preserved.
+Testing across v5.0.16 through v5.1.33 revealed that firmware updates on v5.x reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped every time. Only `/data/` (and the separate `/persistent/` partition) are preserved.
 
 What each event actually affects:
 
@@ -459,7 +459,7 @@ What each event actually affects:
 | `/etc/samba/smb.conf`, Samba passdb | wiped | wiped |
 | Hook wrapper in `/usr/lib/ubnt/hooks/...` | wiped | wiped |
 | `/data/timemachine/` recovery kit | **preserved** | **preserved** |
-| `/volume1` symlink to the data disk | **preserved** (confirmed on v5.1.26 and v5.1.31) | wiped |
+| `/volume1` symlink to the data disk | **preserved** (confirmed on v5.1.26, v5.1.31, and v5.1.33) | wiped |
 | Backup data (sparsebundles on the RAID array) | **preserved** | **preserved** |
 
 So a routine firmware update needs the packages and configs restored, while a **factory reset** additionally drops the `/volume1` path — and on UniFi OS v9+ the data RAID array comes back mounted under a UUID path such as `/volume/<uuid>` instead of `/volume1`. The recovery script handles both cases: it locates the `/dev/md3` mount and re-links `/volume1` to it if needed, then restores the share (see [the mount path note](#disk-space)).
@@ -950,7 +950,7 @@ This guide was created and tested with the following versions:
 ### UDM Pro Max Environment
 - **Model**: UniFi Dream Machine Pro Max (`UDM-Pro-Max`, systemid `ea32`)
 - **OS**: Debian GNU/Linux 11 (bullseye)
-- **UniFi OS Versions Tested**: v5.0.16 through v5.1.31 (recovery verified across every update in that range)
+- **UniFi OS Versions Tested**: v5.0.16 through v5.1.33 (recovery verified across every update in that range)
 - **Architecture**: aarch64 (ARM64)
 - **Samba Version**: 4.13.13+dfsg-1~deb11u7
 - **Avahi Version**: 0.8-5+deb11u3
@@ -972,7 +972,7 @@ This guide was created and tested with the following versions:
 
 ---
 
-**Last Updated**: August 30, 2026
+**Last Updated**: September 14, 2026
 
 If you found this guide helpful, please share it with others who might benefit from using their UDM Pro or UDM Pro Max as a Time Machine backup destination!
 
