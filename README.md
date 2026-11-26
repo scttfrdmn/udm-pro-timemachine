@@ -54,13 +54,13 @@ This guide supports two configurations:
 
 The RAID-1 configuration on UDM Pro Max provides redundancy - if one disk fails, your data remains safe on the other disk.
 
-**Note on RAID-1**: UDM Pro Max typically comes with RAID-1 pre-configured via mdadm (usually `/dev/md3`). You can verify this with:
+**Note on RAID-1**: UDM Pro Max typically comes with RAID-1 pre-configured via mdadm. The md device name depends on the firmware — `/dev/md3` on UniFi OS 5.x, `/dev/md5` on 6.x. You can verify this with:
 ```bash
 cat /proc/mdstat
-mdadm --detail /dev/md3
+mdadm --detail /dev/md5   # use the md device name shown by /proc/mdstat
 ```
 
-> **⚠️ The data disk mount path changed in UniFi OS v9+ (firmware v5.x).**
+> **⚠️ The data disk mount path changed in UniFi OS 5.x.**
 > Older firmware mounted the data RAID array at `/volume1`. Newer firmware
 > mounts it under a **UUID path** instead, e.g.
 > `/volume/2f27d08f-56be-430f-bf13-e2842c30a148`, and `/volume1` no longer
@@ -68,7 +68,7 @@ mdadm --detail /dev/md3
 > canonical path — on newer firmware, create a symlink so everything resolves:
 > ```bash
 > # Find where the RAID array is actually mounted
-> MD_MOUNT=$(awk '$1 == "/dev/md3" { print $2; exit }' /proc/mounts)
+> MD_MOUNT=$(awk '$2 ~ "^/volume/" { print $2; exit }' /proc/mounts)
 > echo "RAID mounted at: $MD_MOUNT"
 > # Bridge it to the /volume1 path this guide expects
 > ln -sfn "$MD_MOUNT" /volume1
@@ -101,8 +101,9 @@ If Samba and Avahi are not already installed, install them:
 # Update package lists
 apt update
 
-# Install Samba and Avahi
-apt install -y samba avahi-daemon
+# Install Samba and Avahi (--no-install-recommends keeps Debian 13 on
+# UniFi OS 6.x from also pulling in winbind and the AD domain controller)
+apt install -y --no-install-recommends samba avahi-daemon
 
 # Verify installation
 which smbd avahi-daemon
@@ -447,9 +448,9 @@ Rather than using a community workaround, this setup hooks into Ubiquiti's own b
 
 The hook directory `/usr/lib/ubnt/hooks/system/bootup-bottom/` sits in the overlayfs upper layer.
 
-#### What Firmware Updates Actually Reset (v5.x)
+#### What Firmware Updates Actually Reset (v5.x and v6.x)
 
-Testing across v5.0.16 through v5.1.33 revealed that firmware updates on v5.x reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped every time. Only `/data/` (and the separate `/persistent/` partition) are preserved.
+Testing across v5.0.16 through v6.0.17 revealed that firmware updates reset the **entire overlayfs upper layer** for system paths — not just dpkg-managed files. The hook wrapper placed in `/usr/lib/ubnt/hooks/system/bootup-bottom/` was wiped every time. Only `/data/` (and the separate `/persistent/` partition) are preserved.
 
 What each event actually affects:
 
@@ -459,10 +460,12 @@ What each event actually affects:
 | `/etc/samba/smb.conf`, Samba passdb | wiped | wiped |
 | Hook wrapper in `/usr/lib/ubnt/hooks/...` | wiped | wiped |
 | `/data/timemachine/` recovery kit | **preserved** | **preserved** |
-| `/volume1` symlink to the data disk | **preserved** (confirmed on v5.1.26, v5.1.31, and v5.1.33) | wiped |
+| `/volume1` symlink to the data disk | **preserved** (confirmed on v5.1.26 through v6.0.17) | wiped |
 | Backup data (sparsebundles on the RAID array) | **preserved** | **preserved** |
 
-So a routine firmware update needs the packages and configs restored, while a **factory reset** additionally drops the `/volume1` path — and on UniFi OS v9+ the data RAID array comes back mounted under a UUID path such as `/volume/<uuid>` instead of `/volume1`. The recovery script handles both cases: it locates the `/dev/md3` mount and re-links `/volume1` to it if needed, then restores the share (see [the mount path note](#disk-space)).
+So a routine firmware update needs the packages and configs restored, while a **factory reset** additionally drops the `/volume1` path — and on UniFi OS 5.x and later the data RAID array comes back mounted under a UUID path such as `/volume/<uuid>` instead of `/volume1`. The recovery script handles both cases: it finds the `/volume/<uuid>` directory holding `timemachine/` and re-links `/volume1` to it if needed, then restores the share (see [the mount path note](#disk-space)).
+
+**UniFi OS 6.0** moved the base system from Debian 11 (bullseye) to Debian 13 (trixie), so Samba now reinstalls as 4.22 instead of 4.13, and the RAID array was renamed from `/dev/md3` to `/dev/md5`. Neither needs manual work: the saved `[TimeMachine]` block and `passdb.tdb` load unchanged in Samba 4.22, and the mount UUID (and therefore the `/volume1` symlink) stayed the same.
 
 This means recovery after a firmware update requires **one manual SSH command** to bootstrap:
 
@@ -649,7 +652,9 @@ tmutil verifychecksums /Volumes/TimeMachine
 
 4. **Verify disk health** on UDM Pro:
    ```bash
-   smartctl -a /dev/md3
+   # SMART reads physical disks, not the md array — check each member
+   smartctl -a /dev/sdb
+   smartctl -a /dev/sdc
    ```
 
 ### Issue: Out of Space on UDM Pro
@@ -804,7 +809,7 @@ If you see many `.interrupted` or `.inprogress` backup folders, Time Machine is 
 1. **Reinstall packages**:
    ```bash
    ssh root@192.168.1.1
-   apt update && apt install -y samba avahi-daemon
+   apt update && apt install -y --no-install-recommends samba avahi-daemon
    ```
 
 2. **Re-add the TimeMachine share to `/etc/samba/smb.conf`** (the `[TimeMachine]` section from Step 4 will be gone — re-run that step).
@@ -949,15 +954,15 @@ This guide was created and tested with the following versions:
 
 ### UDM Pro Max Environment
 - **Model**: UniFi Dream Machine Pro Max (`UDM-Pro-Max`, systemid `ea32`)
-- **OS**: Debian GNU/Linux 11 (bullseye)
-- **UniFi OS Versions Tested**: v5.0.16 through v5.1.33 (recovery verified across every update in that range)
+- **UniFi OS Versions Tested**: v5.0.16 through v6.0.17 (recovery verified across every update in that range)
+- **OS**: Debian GNU/Linux 13 (trixie) on UniFi OS 6.x; Debian 11 (bullseye) on 5.x
 - **Architecture**: aarch64 (ARM64)
-- **Samba Version**: 4.13.13+dfsg-1~deb11u7
-- **Avahi Version**: 0.8-5+deb11u3
+- **Samba Version**: 4.22.11+dfsg-0+deb13u1 on 6.x; 4.13.13+dfsg-1~deb11u7 on 5.x
+- **Avahi Version**: 0.8
 - **Disk**: Dual 14.6TB disks in RAID-1 via mdadm (14.5TB usable)
-- **RAID Device**: `/dev/md3` (sdb5 + sdc5)
+- **RAID Device**: `/dev/md5` on 6.x, `/dev/md3` on 5.x (sdb5 + sdc5)
 - **RAID Status**: Both disks active [UU] for full redundancy
-- **Mount Path (UniFi OS v9+)**: RAID array mounts under `/volume/<uuid>`, not `/volume1` — bridged with a `/volume1` symlink (see [Disk Space](#disk-space))
+- **Mount Path (UniFi OS 5.x and later)**: RAID array mounts under `/volume/<uuid>`, not `/volume1` — bridged with a `/volume1` symlink (see [Disk Space](#disk-space))
 
 ### macOS Environment
 - **Tested macOS Version**: macOS 26.1 (Build 25B78)
@@ -972,7 +977,7 @@ This guide was created and tested with the following versions:
 
 ---
 
-**Last Updated**: September 14, 2026
+**Last Updated**: November 25, 2026
 
 If you found this guide helpful, please share it with others who might benefit from using their UDM Pro or UDM Pro Max as a Time Machine backup destination!
 

@@ -27,15 +27,18 @@ if [ ! -d "$BACKUP_DIR" ]; then
 fi
 
 # --- Self-heal: ensure /volume1 points at the RAID data disk ---
-# UniFi OS v9+ (UDM firmware v5.x) mounts the data RAID array under a
+# UniFi OS 5.x and later mount the data RAID array under a
 # UUID path (/volume/<uuid>) instead of the historical /volume1. The share
 # config and backups all reference /volume1, so bridge it with a symlink.
-# mdadm assembles the array as /dev/md3; we find wherever the kernel mounted
-# it and link /volume1 to that, so the path is stable across firmware changes.
+# The md device name is not stable (/dev/md3 on v5.x, /dev/md5 on v6.x), so
+# locate the volume by the timemachine directory it contains instead.
 
 if [ ! -d "$SHARE_DIR" ]; then
-    MD_MOUNT="$(awk '$1 == "/dev/md3" { print $2; exit }' /proc/mounts)"
-    if [ -n "$MD_MOUNT" ] && [ -d "$MD_MOUNT/timemachine" ]; then
+    MD_MOUNT=""
+    for d in /volume/*/timemachine; do
+        [ -d "$d" ] && MD_MOUNT="${d%/timemachine}" && break
+    done
+    if [ -n "$MD_MOUNT" ]; then
         if [ -e /volume1 ] && [ ! -L /volume1 ]; then
             log "WARNING: /volume1 exists and is not a symlink — leaving it alone"
         else
@@ -43,7 +46,7 @@ if [ ! -d "$SHARE_DIR" ]; then
             log "Linked /volume1 -> $MD_MOUNT (RAID data disk)"
         fi
     else
-        log "WARNING: could not locate the RAID data disk (/dev/md3 mount); $SHARE_DIR may be unavailable"
+        log "WARNING: could not locate a /volume/*/timemachine data directory; $SHARE_DIR may be unavailable"
     fi
 fi
 
@@ -64,13 +67,15 @@ fi
 
 if ! command -v smbd &>/dev/null; then
     log "Samba missing — reinstalling after firmware update..."
-    apt-get update -qq && apt-get install -y -qq samba
+    # --no-install-recommends: on Debian 13 (UniFi OS v6) the recommends pull in
+    # winbind and the AD domain controller, neither of which a file share needs.
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends samba
     log "Samba installed"
 fi
 
 if ! command -v avahi-daemon &>/dev/null; then
     log "Avahi missing — reinstalling after firmware update..."
-    apt-get install -y -qq avahi-daemon
+    apt-get install -y -qq --no-install-recommends avahi-daemon
     log "Avahi installed"
 fi
 
